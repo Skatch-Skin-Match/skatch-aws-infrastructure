@@ -1,0 +1,133 @@
+name: Production ECS Pipeline
+on:
+  workflow_call:
+    inputs:
+      applicationName:
+        required: true
+        type: string
+      repositoryName:
+        required: true
+        type: string
+      region:
+        required: true
+        type: string
+      parameters:
+        required: true
+        type: string
+      tags:
+        required: false
+        type: string
+      environment:
+        required: false
+        type: string
+        default: "Production"
+      dockerFile:
+        required: false
+        type: string
+        default: "Dockerfile"
+      path:
+        required: false
+        type: string
+        default: "./"
+      build_args:
+        required: false
+        type: string
+        default: ""
+      deploy:
+        required: false
+        type: boolean
+        default: true
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    environment: "Production"
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_SKATCH_CICD }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_SKATCH_CICD }}
+      AWS_DEFAULT_REGION: ${{inputs.region}}
+      VPC_ID: ${{ secrets.VPC_ID }}
+      SUBNET_IDS: ${{ secrets.SUBNET_IDS }}
+      ENV: ${{ inputs.environment }}
+      APPLICATION_NAME: ${{inputs.applicationName}}
+      REPO_NAME: ${{inputs.repositoryName}}
+      TAGS: ${{ inputs.TAGS }}
+      PARAMETERS: ${{inputs.parameters}}
+      DEPLOY: ${{ inputs.deploy }}
+      DOCKER_FILE: ${{ inputs.dockerFile }}
+      D_PATH: ${{ inputs.path }}
+      BUILD_ARGS: ${{ inputs.build_args }}
+      SubnetA: ${{ secrets.SUBNET_A }}
+      SubnetB: ${{ secrets.SUBNET_B }}
+      SubnetC: ${{ secrets.SUBNET_C }}
+      SubnetD: ${{ secrets.SUBNET_D }}
+    strategy:
+      matrix:
+        node-version: [16.x]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - name: Setup SAM cli
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.8"
+      # - run: npm ci
+      - run: 
+          |
+          npm install
+          npm run build --if-present
+      # - run: npm test
+      # - uses: ArtiomTr/jest-coverage-report-action@v2
+      #   id: coverage
+      #   with:
+      #       output: report-markdown
+      # - uses: marocchino/sticky-pull-request-comment@v2
+      #   with:
+      #       message: ${{ steps.coverage.outputs.report }}
+      - uses: aws-actions/setup-sam@v2
+      - name: sam Temporary fix https://github.com/aws/aws-sam-cli/issues/4527
+        run: $(dirname $(readlink $(which sam)))/pip install --force-reinstall "cryptography==38.0.4"
+      - id: get_version
+        uses: battila7/get-version-action@v2
+      - name: Validate SAM Template
+        run: sam validate
+      - uses: kciter/aws-ecr-action@v3
+        if: ${{ inputs.DEPLOY }}
+        id: repoImage
+        with:
+          access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID_SKATCH_CICD }}
+          secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SKATCH_CICD }}
+          account_id: ${{ secrets.AWS_ACCOUNT_NUMBER_SKATCH }}
+          repo: ${{ env.REPO_NAME }}
+          region: ${{ env.AWS_DEFAULT_REGION }}
+          tags: latest,${{ github.sha }}
+          create_repo: true
+          image_scanning_configuration: true
+          set_repo_policy: true
+          repo_policy_file: repo-policy.json
+          dockerFile: ${{ env.DOCKER_FILE }}
+          path: ${{ env.D_PATH }}
+          # extra_build_args: --build-arg a=x ${{ env.BUILD_ARGS }}
+      - id: env-string
+        uses: ASzc/change-string-case-action@v1
+        with:
+          string: ${{ env.ENV }}
+      - name: Deploy to Production
+        if: ${{ inputs.deploy }}
+        run: |
+          echo "Deploying image: " + ${{ steps.repoImage.outputs.image }}
+          sam deploy --stack-name ${{ inputs.applicationName }}-${{steps.env-string.outputs.capitalized}} \
+            --region ${{env.AWS_DEFAULT_REGION}} \
+            --no-disable-rollback \
+            --no-confirm-changeset \
+            --resolve-s3 \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides 'ProjectName=${{inputs.applicationName}} VpcId=${{env.VPC_ID}} SubnetIds=${{env.SUBNET_IDS}} SubnetA=${{ env.SubnetA }} SubnetB=${{ env.SubnetB }} SubnetC=${{ env.SubnetC }} SubnetD=${{ env.SubnetD }} ImageName=${{ steps.repoImage.outputs.image }} ${{inputs.parameters}}' \
+            --tags CreatedBy=SKATCH-SAM ${{ inputs.tags }} \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM

@@ -1,0 +1,394 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for Fargate Deployment.
+Parameters:
+  VpcId:
+    Type: String
+  SubnetIds:
+    Type: String
+  Certificate:
+    Type: String
+    # Update with the certificate ARN from Certificate Manager, which must exist in the same region.
+    Default: 'arn:aws:acm:us-west-2:725917462874:certificate/49170d9d-7df8-40a8-a1a7-c4686b372dd7' 
+  Image:
+    Type: String
+  ServiceName:
+    Type: String
+  ContainerPort:
+    Type: Number
+    Default: "3000"
+  LoadBalancerPort:
+    Type: Number
+    Default: 443
+  HealthCheckPath:
+    Type: String
+    Default: /
+  # for autoscaling
+  MinContainers:
+    Type: Number
+    Default: "1"
+  # for autoscaling
+  MaxContainers:
+    Type: Number
+    Default: "2"
+  # target CPU utilization (%)
+  AutoScalingTargetValue:
+    Type: Number
+    Default: 6
+  EnvironmentName:
+    Description: Environment Name
+    Type: String
+  CpuValue:
+    Type: String
+    Default: 256
+  MemoryValue:
+    Type: String
+    Default: 0.5GB
+  SecretName:
+    Type: String
+    Default: ""  
+  SecretArn:  
+    Type: String
+    Default: ""
+  DBSecretName:
+    Type: String
+    Default: ""  
+  DBSecretArn:  
+    Type: String
+    Default: ""
+  DBSecretsManagerAccessPolicy:
+    Type: String
+    Default: ""
+  OperatingSystemFamily:
+    Type: String
+    Default: "LINUX"
+  SubnetA:
+    Description: SubnetID to create the stack
+    Type: String
+  SubnetB:
+    Description: SubnetID to create the stack
+    Type: String
+  SubnetC:
+    Description: SubnetID to create the stack
+    Type: String 
+  SubnetD:
+    Description: SubnetID to create the stack
+    Type: String
+  DesiredCount:
+    Description: Desired Count for container
+    Type: Number
+    Default: 1 
+  
+Conditions:
+  AttachSecretName: !Not 
+    - !Equals 
+      - !Ref SecretName
+      - ''
+  AttachSecretArn: !Not 
+    - !Equals 
+      - !Ref SecretArn
+      - ''    
+  AttachSecrets: !And 
+    - !Condition AttachSecretName
+    - !Condition AttachSecretArn
+  DBAttachSecretName: !Not 
+    - !Equals 
+      - !Ref DBSecretName
+      - ''
+  DBAttachSecretArn: !Not 
+    - !Equals 
+      - !Ref DBSecretArn
+      - ''    
+  DBAttachSecrets: !And 
+    - !Condition DBAttachSecretName
+    - !Condition DBAttachSecretArn
+  isAttachSecrets: !And 
+    - !Condition AttachSecrets
+    - !Condition DBAttachSecrets
+
+
+Resources:
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ["", [!Ref ServiceName, ExecutionRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        !If
+         - DBAttachSecrets
+         -
+           - !Ref DBSecretsManagerAccessPolicy
+           - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+         -
+           - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Path: "/"
+      Policies:
+        !If
+         - AttachSecrets
+         - 
+           - PolicyName: !Sub ${ServiceName}-SecretsManagerPolicy
+             PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                  - Action:
+                      - secretsmanager:GetResourcePolicy
+                      - secretsmanager:GetSecretValue
+                      - secretsmanager:DescribeSecret
+                      - secretsmanager:ListSecretVersionIds
+                    Effect: Allow
+                    Resource: !Ref SecretArn        
+         - !Ref "AWS::NoValue"         
+  
+  # A role for the containers
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ["", [!Ref ServiceName, TaskRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Join ["", [!Ref ServiceName, AutoScalingRole]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceAutoscaleRole"
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Join ["", [!Ref ServiceName, Cluster]]
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-Cluster
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    # Makes sure the log group is created before it is used.
+    DependsOn: LogGroup
+    Properties:
+      # Name of the task definition. Subsequent versions of the task definition are grouped together under this name.
+      Family: !Join ["", [!Ref ServiceName, TaskDefinition]]
+      # awsvpc is required for Fargate
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      # 256 (.25 vCPU) - Available memory values: 0.5GB, 1GB, 2GB
+      # 512 (.5 vCPU) - Available memory values: 1GB, 2GB, 3GB, 4GB
+      # 1024 (1 vCPU) - Available memory values: 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB
+      # 2048 (2 vCPU) - Available memory values: Between 4GB and 16GB in 1GB increments
+      # 4096 (4 vCPU) - Available memory values: Between 8GB and 30GB in 1GB increments
+      Cpu: !Ref CpuValue
+      # 0.5GB, 1GB, 2GB - Available cpu values: 256 (.25 vCPU)
+      # 1GB, 2GB, 3GB, 4GB - Available cpu values: 512 (.5 vCPU)
+      # 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB - Available cpu values: 1024 (1 vCPU)
+      # Between 4GB and 16GB in 1GB increments - Available cpu values: 2048 (2 vCPU)
+      # Between 8GB and 30GB in 1GB increments - Available cpu values: 4096 (4 vCPU)
+      Memory: !Ref MemoryValue
+      # A role needed by ECS.
+      # "The ARN of the task execution role that containers in this task can assume. All containers in this task are granted the permissions that are specified in this role."
+      # "There is an optional task execution IAM role that you can specify with Fargate to allow your Fargate tasks to make API calls to Amazon ECR."
+      ExecutionRoleArn: !Ref ExecutionRole
+      # "The Amazon Resource Name (ARN) of an AWS Identity and Access Management (IAM) role that grants containers in the task permission to call AWS APIs on your behalf."
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: !Ref ServiceName
+          Image: !Ref Image
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+          # Send logs to CloudWatch Logs
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: ecs
+          Secrets:
+           !If
+            -  isAttachSecrets
+            - 
+              - Name: !Ref SecretName
+                ValueFrom: !Ref SecretArn
+              - Name: !Ref DBSecretName
+                ValueFrom: !Ref DBSecretArn  
+            - !If       
+                - AttachSecrets 
+                -
+                  - Name: !Ref SecretName
+                    ValueFrom: !Ref SecretArn  
+                - !Ref "AWS::NoValue"    
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-Task-Definition
+      RuntimePlatform:
+        OperatingSystemFamily: !Ref OperatingSystemFamily
+
+  
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Join ['', [!Ref ServiceName, LoadBalancerSecurityGroup]]
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref LoadBalancerPort
+          ToPort: !Ref LoadBalancerPort
+          CidrIp: 0.0.0.0/0
+
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Join ["", [!Ref ServiceName, ContainerSecurityGroup]]
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-Container-${EnvironmentName}
+        
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - ListenerHTTPS
+    # This dependency is needed so that the load balancer is setup correctly in time
+    Properties:
+      ServiceName: !Ref ServiceName
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      DesiredCount: !Ref DesiredCount
+      # This may need to be adjusted if the container takes a while to start up
+      HealthCheckGracePeriodSeconds: "30"
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          # change to DISABLED if you're using private subnets that have access to a NAT gateway
+          AssignPublicIp: ENABLED
+          #Subnets: !Split [ ",", !Ref SubnetIds]
+          Subnets:
+            - !Ref SubnetA
+            - !Ref SubnetB
+            - !Ref SubnetC
+            - !Ref SubnetD
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+      LoadBalancers:
+        - ContainerName: !Ref ServiceName
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+      Tags:
+        - Key: Name
+          Value: !Ref ServiceName
+  
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      # will look for a 200 status code by default unless specified otherwise
+      HealthCheckPath: !Ref HealthCheckPath
+      HealthCheckTimeoutSeconds: 5
+      UnhealthyThresholdCount: 2
+      HealthyThresholdCount: 2
+      Name: !Join ["", [!Ref ServiceName, TG]]
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 60 # default is 300
+      TargetType: ip
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: true
+        - Key: stickiness.app_cookie.cookie_name
+          Value: "connect.sid"
+        - Key: stickiness.type
+          Value: app_cookie 
+        - Key: stickiness.app_cookie.duration_seconds
+          Value: 86400
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-TargetGroup-${EnvironmentName}    
+  
+  ListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: !Ref LoadBalancerPort
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref Certificate    
+       
+  
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      LoadBalancerAttributes:
+        # this is the default, but is specified here in case it needs to be changed
+        - Key: idle_timeout.timeout_seconds
+          Value: 60
+      Name: !Join ['', [!Ref ServiceName, LoadBalancer]]
+      # "internal" is also an option
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets: 
+         - !Ref SubnetA
+         - !Ref SubnetB
+         - !Ref SubnetC
+         - !Ref SubnetD
+  
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ["", [/ecs/, !Ref ServiceName, TaskDefinition]]
+
+  
+# AUTO SCALING
+  # AutoScalingTarget:
+  #   Type: AWS::ApplicationAutoScaling::ScalableTarget
+  #   Properties:
+  #     MaxCapacity: !Ref MaxContainers
+  #     MinCapacity: !Ref MinContainers  
+  #     RoleARN: !GetAtt AutoScalingRole.Arn
+  #     ServiceNamespace: ecs
+  #     ScalableDimension: ecs:service:DesiredCount
+  #     ResourceId: !Join ["/", [service, !Ref Cluster, !GetAtt Service.Name]]
+
+  # AutoScalingPolicy:
+  #   Type: AWS::ApplicationAutoScaling::ScalingPolicy
+  #   Properties:
+  #     PolicyName: !Join ["", [!Ref ServiceName, AutoScalingPolicyALB]]
+  #     PolicyType: TargetTrackingScaling
+  #     ScalingTargetId: !Ref AutoScalingTarget
+  #     TargetTrackingScalingPolicyConfiguration:
+  #       PredefinedMetricSpecification:
+  #         PredefinedMetricType: ALBRequestCountPerTarget
+  #         ResourceLabel: !Join ["/", [ !GetAtt LoadBalancer.LoadBalancerFullName, !GetAtt  TargetGroup.TargetGroupFullName]]
+  #       ScaleInCooldown: 100
+  #       ScaleOutCooldown: 10
+  #       DisableScaleIn: true
+  #       TargetValue: !Ref AutoScalingTargetValue
