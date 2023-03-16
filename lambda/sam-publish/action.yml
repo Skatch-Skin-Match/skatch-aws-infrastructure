@@ -1,0 +1,43 @@
+name: Skatch SAM Publish to S3
+description: Skatch Composite Actions to build and publish to S3
+
+inputs:
+  versionNo:
+    description: API Version Number (e.g. v1.0.0)
+    required: true
+  apiName:
+    description: Name of the API (e.g. ApplicantApi)
+    required: true
+  applicationName:
+    description: Name of the Application 
+    required: true
+  environment:
+    description: Name of the evironment (eg., 'Dev', 'Staging', 'Prod')
+    required: false
+  region:
+    description: Name of the region 
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - id: env-string
+      uses: ASzc/change-string-case-action@v1
+      with:
+        string: ${{ env.ENV }}
+    - name: SAM Publish
+      run: |
+        PACKAGE_VERSION=${{ inputs.versionNo }}
+        LENV=${{ steps.env-string.outputs.lowercase }}
+        ARTIFACTS_DIR=skatch-lambda-sam-devops-${AWS_DEFAULT_REGION}-${LENV}
+
+        if [[ "${PACKAGE_VERSION}" == "main" || "${PACKAGE_VERSION}" == "merge" || "${LENV}" == "sandbox" ]]; then
+            PACKAGE_VERSION="${PACKAGE_VERSION}.${GITHUB_SHA}"
+        fi
+        echo ${PACKAGE_VERSION}
+        echo "Zip Name: ${{ inputs.applicationName }}/${{ inputs.apiName }}/${{ inputs.environment }}/${{ inputs.region }}/${PACKAGE_VERSION}.zip" 
+        sam build -b ${PACKAGE_VERSION}/
+        zip -r ${PACKAGE_VERSION}.zip ${PACKAGE_VERSION}/
+        echo "s3 upload ${PACKAGE_VERSION}.zip s3://${ARTIFACTS_DIR}/${{ inputs.applicationName }}/${{ inputs.apiName }}/${{ inputs.environment }}/${AWS_DEFAULT_REGION}/ started.."
+        aws s3 cp ${PACKAGE_VERSION}.zip s3://${ARTIFACTS_DIR}/${{ inputs.applicationName }}/${{ inputs.apiName }}/${{ inputs.environment }}/${AWS_DEFAULT_REGION}/${PACKAGE_VERSION} --metadata '{ "git-commit-hash": "'"${GITHUB_SHA}"'" }'
+      shell: bash

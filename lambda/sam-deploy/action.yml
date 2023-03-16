@@ -1,0 +1,73 @@
+name: Skatch SAM Deploy
+description: Skatch Composite Actions to Deploy SAM
+
+inputs:
+  versionNo:
+    description: API Version Number (e.g. v1.0.0)
+    required: true
+  apiName:
+    description: Name of the API (e.g. ApplicantApi)
+    required: true
+  applicationName:
+    description: Name of the Application 
+    required: true
+  environment:
+    description: Name of the evironment (eg., 'Dev', 'Staging', 'Prod')
+    required: true
+  tags:
+    description: Tags to be attached
+    required: false
+  parameters:
+    description: Parameters to deploy
+    required: false
+  deploy:
+    description: Deploy Flag
+    required: false
+    default: "true"
+  region:
+    description: Region to be deployed
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - id: env-string
+      uses: ASzc/change-string-case-action@v1
+      with:
+        string: ${{ env.ENV }}
+    - name: SAM Deploy
+      run: |
+        PACKAGE_VERSION=${{ inputs.versionNo }}
+        LENV=${{ steps.env-string.outputs.lowercase }}
+        ARTIFACTS_DIR=skatch-lambda-sam-devops-${AWS_DEFAULT_REGION}-${LENV}
+
+        if [[ "${PACKAGE_VERSION}" == "main" || "${PACKAGE_VERSION}" == "merge" ||  "${LENV}" == "sandbox" ]]; then
+            PACKAGE_VERSION="${PACKAGE_VERSION}.${GITHUB_SHA}"
+        fi
+
+        echo "Deploy Status : ${{inputs.deploy}}"
+        echo "Artifacts Dir : ${ARTIFACTS_DIR}"
+        
+
+        if [[ "${{inputs.deploy}}" == "true" ]]; then
+
+          echo "Download : ${PACKAGE_VERSION} from S3"
+          aws s3 cp s3://${ARTIFACTS_DIR}/${{ inputs.applicationName }}/${{ inputs.apiName }}/${{ inputs.environment }}/${AWS_DEFAULT_REGION}/${PACKAGE_VERSION} ${PACKAGE_VERSION}.out.zip
+          ls -ltr
+          unzip ${PACKAGE_VERSION}.out.zip -d build
+          cd ./build/${PACKAGE_VERSION}
+
+          sam deploy --stack-name ${{ inputs.applicationName }}-${{inputs.apiName}}-${{steps.env-string.outputs.capitalized}} \
+            --region ${{env.AWS_DEFAULT_REGION}} \
+            --no-disable-rollback \
+            --no-confirm-changeset \
+            --resolve-s3 \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides '${{inputs.parameters}} ProjectName=${{inputs.applicationName}}' \
+            --tags CreatedBy=Skatch-SAM ${{ inputs.tags }} \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM
+        else
+          echo "SAM Deploy skipped"
+        fi
+        exit 0
+      shell: bash
