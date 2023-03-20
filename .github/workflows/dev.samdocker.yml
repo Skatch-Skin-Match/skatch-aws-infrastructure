@@ -58,6 +58,7 @@ jobs:
       PARAMETERS: ${{inputs.parameters}}
       DEPLOY: ${{ inputs.deploy }}
       D_PATH: ${{ inputs.path }}
+      INPUT_PATH: ${{ inputs.path }}
     steps:
       - name: Print all the github actions events
         uses: hmarr/debug-action@v2
@@ -112,6 +113,6 @@ jobs:
             --no-confirm-changeset \
             --resolve-s3 \
             --no-fail-on-empty-changeset \
-            --parameter-overrides 'ProjectName=${{inputs.applicationName}} ImageUri=${{ steps.repoImage.outputs.image }} ${{inputs.parameters}}' \
+            --parameter-overrides 'ProjectName=${{inputs.applicationName}} ImageUri=${{ steps.repoImage.outputs.image }}  VpcID=${{env.VPC_ID}} SubnetA=${{ env.SubnetA }} SubnetB=${{ env.SubnetB }} SubnetC=${{ env.SubnetC }} SubnetD=${{ env.SubnetD }} ${{inputs.parameters}}' \
             --tags CreatedBy=Skatch-SAM ${{ inputs.tags }} \
             --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM
