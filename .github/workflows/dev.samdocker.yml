@@ -99,7 +99,6 @@ jobs:
           dockerFile: ${{ env.DOCKER_FILE }}
           path: ${{ env.D_PATH }}
           extra_build_args: ${{ env.BUILD_ARGS }}
-        working-directory: ${{ env.D_PATH }}
       - id: get_version
         uses: battila7/get-version-action@v2
       - name: Deploy to Development
