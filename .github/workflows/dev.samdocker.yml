@@ -31,7 +31,10 @@ on:
       dockerFile:
         required: false
         type: string
-        default: "Dockerfile"  
+        default: "Dockerfile"
+      repositoryName:
+        required: true
+        type: string   
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -49,6 +52,7 @@ jobs:
       ENV: ${{ inputs.environment }}
       APPLICATION_NAME: ${{inputs.applicationName}}
       REPO_NAME: ${{inputs.repositoryName}}
+      DOCKER_FILE: ${{ inputs.dockerFile }}
       API_NAME: ${{inputs.apiName}}
       SRC_DIR: ${{inputs.srcDir}}
       TAGS: ${{ inputs.TAGS }}
@@ -92,7 +96,7 @@ jobs:
           image_scanning_configuration: true
           set_repo_policy: true
           repo_policy_file: repo-policy.json
-          dockerFile: ${{ inputs.dockerFile }}
+          dockerFile: ${{ env.DOCKER_FILE }}
           path: ${{ env.D_PATH }}
           extra_build_args: ${{ env.BUILD_ARGS }}  
       - id: get_version
