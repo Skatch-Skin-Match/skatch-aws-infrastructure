@@ -86,7 +86,7 @@ jobs:
         if: ${{ inputs.DEPLOY }}
         id: repoImage
         with:
-          access_key_id: ${{ secrets.secrets.AWS_ACCESS_KEY_ID_SKATCH_CICD }}
+          access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID_SKATCH_CICD }}
           secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SKATCH_CICD  }}
           account_id: ${{ secrets.AWS_ACCOUNT_NUMBER_SKATCH }}
           repo: ${{ env.REPO_NAME }}
