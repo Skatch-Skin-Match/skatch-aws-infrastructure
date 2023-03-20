@@ -17,9 +17,6 @@ on:
       tags:
         required: false
         type: string
-      srcDir:
-        required: true
-        type: string
       environment:
         required: false
         type: string
@@ -33,7 +30,11 @@ on:
         default: "Dockerfile"
       repositoryName:
         required: true
-        type: string   
+        type: string
+      path:
+        required: false
+        type: string
+        default: "./"  
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -53,10 +54,10 @@ jobs:
       REPO_NAME: ${{inputs.repositoryName}}
       DOCKER_FILE: ${{ inputs.dockerFile }}
       API_NAME: ${{inputs.apiName}}
-      SRC_DIR: ${{inputs.srcDir}}
       TAGS: ${{ inputs.TAGS }}
       PARAMETERS: ${{inputs.parameters}}
       DEPLOY: ${{ inputs.deploy }}
+      D_PATH: ${{ inputs.path }}
     steps:
       - name: Print all the github actions events
         uses: hmarr/debug-action@v2
@@ -97,7 +98,7 @@ jobs:
           repo_policy_file: repo-policy.json
           dockerFile: ${{ env.DOCKER_FILE }}
           path: ${{ env.D_PATH }}
-          extra_build_args: ${{ env.BUILD_ARGS }}  
+          extra_build_args: ${{ env.BUILD_ARGS }}
       - id: get_version
         uses: battila7/get-version-action@v2
       - name: Deploy to Development
