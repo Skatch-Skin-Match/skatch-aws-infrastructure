@@ -8,7 +8,7 @@ Parameters:
   Certificate:
     Type: String
     # Update with the certificate ARN from Certificate Manager, which must exist in the same region.
-    Default: 'arn:aws:acm:us-west-2:725917462874:certificate/49170d9d-7df8-40a8-a1a7-c4686b372dd7' 
+    Default: 'arn:aws:acm:us-west-2:614258581605:certificate/b1a2485e-305e-4405-82df-c6480c87d718' 
   Image:
     Type: String
   ServiceName:
