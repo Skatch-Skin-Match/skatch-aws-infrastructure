@@ -140,9 +140,8 @@ Resources:
                       - secretsmanager:DescribeSecret
                       - secretsmanager:ListSecretVersionIds
                     Effect: Allow
-                    Resource: !Ref SecretArn        
-         - !Ref "AWS::NoValue"
-        - PolicyName: !Sub ${ServiceName}-S3Policy
+                    Resource: !Ref SecretArn
+           - PolicyName: !Sub ${ServiceName}-S3Policy
              PolicyDocument:
                 Version: 2012-10-17
                 Statement:
@@ -155,7 +154,8 @@ Resources:
                       - s3:GetObject
                       - s3:GetObjectAcl
                     Effect: Allow
-                    Resource: "*"
+                    Resource: "*"               
+         - !Ref "AWS::NoValue"
             
   
   # A role for the containers
