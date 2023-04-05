@@ -67,7 +67,11 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 16.x
-          #cache: 'npm'    
+          #cache: 'npm'
+      - id: env-string
+        uses: ASzc/change-string-case-action@v1
+        with:
+          string: ${{ env.ENV }}         
       - name: Setup SAM cli
         uses: actions/setup-python@v3
         with:
