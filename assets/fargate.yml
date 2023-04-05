@@ -141,7 +141,22 @@ Resources:
                       - secretsmanager:ListSecretVersionIds
                     Effect: Allow
                     Resource: !Ref SecretArn        
-         - !Ref "AWS::NoValue"         
+         - !Ref "AWS::NoValue"
+        - PolicyName: !Sub ${ServiceName}-S3Policy
+             PolicyDocument:
+                Version: 2012-10-17
+                Statement:
+                  - Action:
+                      - s3:ListAllMyBuckets
+                      - s3:ListBucket
+                      - s3:GetBucketLocation
+                      - s3:PutObject
+                      - s3:PutObjectAcl
+                      - s3:GetObject
+                      - s3:GetObjectAcl
+                    Effect: Allow
+                    Resource: "*"
+            
   
   # A role for the containers
   TaskRole:
