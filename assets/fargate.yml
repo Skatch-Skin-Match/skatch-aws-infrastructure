@@ -77,6 +77,8 @@ Parameters:
     Description: Desired Count for container
     Type: Number
     Default: 1 
+  TaskRole:
+    Type: String   
   
 Conditions:
   AttachSecretName: !Not 
@@ -140,36 +142,8 @@ Resources:
                       - secretsmanager:DescribeSecret
                       - secretsmanager:ListSecretVersionIds
                     Effect: Allow
-                    Resource: !Ref SecretArn
-           - PolicyName: !Sub ${ServiceName}-S3Policy
-             PolicyDocument:
-                Version: 2012-10-17
-                Statement:
-                  - Action:
-                      - s3:ListAllMyBuckets
-                      - s3:ListBucket
-                      - s3:GetBucketLocation
-                      - s3:PutObject
-                      - s3:PutObjectAcl
-                      - s3:GetObject
-                      - s3:GetObjectAcl
-                    Effect: Allow
-                    Resource: "*"               
+                    Resource: !Ref SecretArn              
          - !Ref "AWS::NoValue"
-            
-  
-  # A role for the containers
-  TaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Join ["", [!Ref ServiceName, TaskRole]]
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: "sts:AssumeRole"
-      Path: "/"
 
   AutoScalingRole:
     Type: AWS::IAM::Role
@@ -357,7 +331,6 @@ Resources:
       Certificates:
         - CertificateArn: !Ref Certificate    
        
-  
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
